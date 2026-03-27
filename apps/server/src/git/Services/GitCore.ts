@@ -13,6 +13,7 @@ import type {
   GitCreateBranchInput,
   GitCreateWorktreeInput,
   GitCreateWorktreeResult,
+  GitDiffResult,
   GitInitInput,
   GitListBranchesInput,
   GitListBranchesResult,
@@ -141,6 +142,11 @@ export interface GitCoreShape {
    * Read Git status for a repository.
    */
   readonly status: (input: GitStatusInput) => Effect.Effect<GitStatusResult, GitCommandError>;
+
+  /**
+   * Read a patch for all working tree changes, including untracked files.
+   */
+  readonly readWorkingTreeDiff: (cwd: string) => Effect.Effect<GitDiffResult, GitCommandError>;
 
   /**
    * Read detailed working tree / branch status for a repository.

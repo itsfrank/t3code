@@ -1,11 +1,19 @@
 import { QueryClient } from "@tanstack/react-query";
 import { describe, expect, it } from "vitest";
 import {
+  gitDiffQueryOptions,
   gitMutationKeys,
   gitPreparePullRequestThreadMutationOptions,
   gitPullMutationOptions,
+  gitQueryKeys,
   gitRunStackedActionMutationOptions,
 } from "./gitReactQuery";
+
+describe("gitQueryKeys", () => {
+  it("scopes diff keys by cwd", () => {
+    expect(gitQueryKeys.diff("/repo/a")).not.toEqual(gitQueryKeys.diff("/repo/b"));
+  });
+});
 
 describe("gitMutationKeys", () => {
   it("scopes stacked action keys by cwd", () => {
@@ -47,5 +55,12 @@ describe("git mutation options", () => {
       queryClient,
     });
     expect(options.mutationKey).toEqual(gitMutationKeys.preparePullRequestThread("/repo/a"));
+  });
+});
+
+describe("git query options", () => {
+  it("attaches cwd-scoped query key for diff", () => {
+    const options = gitDiffQueryOptions("/repo/a");
+    expect(options.queryKey).toEqual(gitQueryKeys.diff("/repo/a"));
   });
 });

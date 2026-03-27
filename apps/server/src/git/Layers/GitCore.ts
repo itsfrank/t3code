@@ -32,6 +32,7 @@ import { decodeJsonResult } from "@t3tools/shared/schemaJson";
 
 const DEFAULT_TIMEOUT_MS = 30_000;
 const DEFAULT_MAX_OUTPUT_BYTES = 1_000_000;
+const LARGE_DIFF_MAX_OUTPUT_BYTES = 5_000_000;
 const STATUS_UPSTREAM_REFRESH_INTERVAL = Duration.seconds(15);
 const STATUS_UPSTREAM_REFRESH_TIMEOUT = Duration.seconds(5);
 const STATUS_UPSTREAM_REFRESH_CACHE_CAPACITY = 2_048;
@@ -53,6 +54,7 @@ interface ExecuteGitOptions {
   timeoutMs?: number | undefined;
   allowNonZeroExit?: boolean | undefined;
   fallbackErrorMessage?: string | undefined;
+  maxOutputBytes?: number | undefined;
   progress?: ExecuteGitProgress | undefined;
 }
 
@@ -124,6 +126,13 @@ function parseBranchLine(line: string): { name: string; current: boolean } | nul
     name,
     current: trimmed.startsWith("* "),
   };
+}
+
+function parseNullSeparatedLines(stdout: string): string[] {
+  return stdout
+    .split("\u0000")
+    .map((value) => value.trim())
+    .filter((value) => value.length > 0);
 }
 
 function parseRemoteNames(stdout: string): ReadonlyArray<string> {
@@ -603,6 +612,7 @@ export const makeGitCore = (options?: { executeOverride?: GitCoreShape["execute"
         args,
         allowNonZeroExit: true,
         ...(options.timeoutMs !== undefined ? { timeoutMs: options.timeoutMs } : {}),
+        ...(options.maxOutputBytes !== undefined ? { maxOutputBytes: options.maxOutputBytes } : {}),
         ...(options.progress ? { progress: options.progress } : {}),
       }).pipe(
         Effect.flatMap((result) => {
@@ -646,6 +656,14 @@ export const makeGitCore = (options?: { executeOverride?: GitCoreShape["execute"
       executeGit(operation, cwd, args, { allowNonZeroExit }).pipe(
         Effect.map((result) => result.stdout),
       );
+
+    const runGitStdoutWithOptions = (
+      operation: string,
+      cwd: string,
+      args: readonly string[],
+      options: Pick<ExecuteGitOptions, "allowNonZeroExit" | "maxOutputBytes"> = {},
+    ): Effect.Effect<string, GitCommandError> =>
+      executeGit(operation, cwd, args, options).pipe(Effect.map((result) => result.stdout));
 
     const branchExists = (cwd: string, branch: string): Effect.Effect<boolean, GitCommandError> =>
       executeGit(
@@ -1136,6 +1154,83 @@ export const makeGitCore = (options?: { executeOverride?: GitCoreShape["execute"
           pr: null,
         })),
       );
+
+    const readWorkingTreeDiff: GitCoreShape["readWorkingTreeDiff"] = (cwd) =>
+      Effect.gen(function* () {
+        const headResult = yield* executeGit(
+          "GitCore.readWorkingTreeDiff.verifyHead",
+          cwd,
+          ["rev-parse", "--verify", "HEAD"],
+          {
+            allowNonZeroExit: true,
+          },
+        );
+        const headExists = headResult.code === 0;
+
+        const trackedPatchSegments = headExists
+          ? [
+              yield* runGitStdoutWithOptions(
+                "GitCore.readWorkingTreeDiff.trackedPatch",
+                cwd,
+                ["diff", "HEAD", "--patch", "--minimal"],
+                {
+                  maxOutputBytes: LARGE_DIFF_MAX_OUTPUT_BYTES,
+                },
+              ),
+            ]
+          : yield* Effect.all(
+              [
+                runGitStdoutWithOptions(
+                  "GitCore.readWorkingTreeDiff.cachedRootPatch",
+                  cwd,
+                  ["diff", "--cached", "--patch", "--minimal", "--root"],
+                  {
+                    maxOutputBytes: LARGE_DIFF_MAX_OUTPUT_BYTES,
+                  },
+                ),
+                runGitStdoutWithOptions(
+                  "GitCore.readWorkingTreeDiff.workingTreePatch",
+                  cwd,
+                  ["diff", "--patch", "--minimal"],
+                  {
+                    maxOutputBytes: LARGE_DIFF_MAX_OUTPUT_BYTES,
+                  },
+                ),
+              ],
+              { concurrency: "unbounded" },
+            );
+
+        const untrackedPaths = parseNullSeparatedLines(
+          yield* runGitStdout("GitCore.readWorkingTreeDiff.untrackedFiles", cwd, [
+            "ls-files",
+            "--others",
+            "--exclude-standard",
+            "-z",
+          ]),
+        ).toSorted((left, right) => left.localeCompare(right));
+
+        const untrackedPatches = yield* Effect.forEach(
+          untrackedPaths,
+          (relativePath) =>
+            runGitStdoutWithOptions(
+              "GitCore.readWorkingTreeDiff.untrackedPatch",
+              cwd,
+              ["diff", "--no-index", "--patch", "--minimal", "--", "/dev/null", relativePath],
+              {
+                allowNonZeroExit: true,
+                maxOutputBytes: LARGE_DIFF_MAX_OUTPUT_BYTES,
+              },
+            ).pipe(Effect.map((patch) => patch.trim())),
+          { concurrency: "unbounded" },
+        );
+
+        const diff = [...trackedPatchSegments, ...untrackedPatches]
+          .map((segment) => segment.trim())
+          .filter((segment) => segment.length > 0)
+          .join("\n\n");
+
+        return { diff };
+      });
 
     const prepareCommitContext: GitCoreShape["prepareCommitContext"] = (cwd, filePaths) =>
       Effect.gen(function* () {
@@ -1796,6 +1891,7 @@ export const makeGitCore = (options?: { executeOverride?: GitCoreShape["execute"
     return {
       execute,
       status,
+      readWorkingTreeDiff,
       statusDetails,
       prepareCommitContext,
       commit,

@@ -1,4 +1,5 @@
 import * as Http from "node:http";
+import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -500,7 +501,12 @@ describe("WebSocket Server", () => {
       providerRegistry?: ProviderRegistryShape;
       open?: OpenShape;
       gitManager?: GitManagerShape;
-      gitCore?: Pick<GitCoreShape, "listBranches" | "initRepo" | "pullCurrentBranch">;
+      gitCore?: Partial<
+        Pick<
+          GitCoreShape,
+          "listBranches" | "initRepo" | "pullCurrentBranch" | "readWorkingTreeDiff"
+        >
+      >;
       terminalManager?: TerminalManagerShape;
       serverSettings?: Partial<ServerSettings>;
     } = {},
@@ -1769,6 +1775,36 @@ describe("WebSocket Server", () => {
     expect(response.error).toBeUndefined();
     expect(response.result).toEqual(statusResult);
     expect(status).toHaveBeenCalledWith({ cwd: "/test" });
+  });
+
+  it("supports git.diff over websocket", async () => {
+    const workspace = makeTempDir("t3code-ws-git-diff-");
+    execFileSync("git", ["init"], { cwd: workspace });
+    execFileSync("git", ["config", "user.email", "test@test.com"], { cwd: workspace });
+    execFileSync("git", ["config", "user.name", "Test"], { cwd: workspace });
+    fs.writeFileSync(path.join(workspace, "README.md"), "# test\n");
+    execFileSync("git", ["add", "README.md"], { cwd: workspace });
+    execFileSync("git", ["commit", "-m", "initial commit"], { cwd: workspace });
+    fs.writeFileSync(path.join(workspace, "README.md"), "# test\noutside change\n");
+    fs.writeFileSync(path.join(workspace, "notes.txt"), "untracked\n");
+
+    server = await createTestServer({ cwd: workspace });
+    const addr = server.address();
+    const port = typeof addr === "object" && addr !== null ? addr.port : 0;
+
+    const [ws] = await connectAndAwaitWelcome(port);
+    connections.push(ws);
+
+    const response = await sendRequest(ws, WS_METHODS.gitDiff, {
+      cwd: workspace,
+    });
+    expect(response.error).toBeUndefined();
+    expect(response.result).toMatchObject({
+      diff: expect.stringContaining("diff --git a/README.md b/README.md"),
+    });
+    expect((response.result as { diff: string }).diff).toContain(
+      "diff --git a/notes.txt b/notes.txt",
+    );
   });
 
   it("supports git pull request routing over websocket", async () => {

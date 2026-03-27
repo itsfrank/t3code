@@ -390,6 +390,20 @@ describe("wsNativeApi", () => {
     );
   });
 
+  it("forwards git diff requests to the websocket git method", async () => {
+    requestMock.mockResolvedValue({ diff: "patch" });
+    const { createWsNativeApi } = await import("./wsNativeApi");
+
+    const api = createWsNativeApi();
+    await api.git.diff({
+      cwd: "/repo",
+    });
+
+    expect(requestMock).toHaveBeenCalledWith(WS_METHODS.gitDiff, {
+      cwd: "/repo",
+    });
+  });
+
   it("forwards full-thread diff requests to the orchestration websocket method", async () => {
     requestMock.mockResolvedValue({ diff: "patch" });
     const { createWsNativeApi } = await import("./wsNativeApi");

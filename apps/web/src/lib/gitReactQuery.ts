@@ -9,6 +9,7 @@ const GIT_BRANCHES_REFETCH_INTERVAL_MS = 60_000;
 
 export const gitQueryKeys = {
   all: ["git"] as const,
+  diff: (cwd: string | null) => ["git", "diff", cwd] as const,
   status: (cwd: string | null) => ["git", "status", cwd] as const,
   branches: (cwd: string | null) => ["git", "branches", cwd] as const,
 };
@@ -33,6 +34,22 @@ export function gitStatusQueryOptions(cwd: string | null) {
       const api = ensureNativeApi();
       if (!cwd) throw new Error("Git status is unavailable.");
       return api.git.status({ cwd });
+    },
+    enabled: cwd !== null,
+    staleTime: GIT_STATUS_STALE_TIME_MS,
+    refetchOnWindowFocus: "always",
+    refetchOnReconnect: "always",
+    refetchInterval: GIT_STATUS_REFETCH_INTERVAL_MS,
+  });
+}
+
+export function gitDiffQueryOptions(cwd: string | null) {
+  return queryOptions({
+    queryKey: gitQueryKeys.diff(cwd),
+    queryFn: async () => {
+      const api = ensureNativeApi();
+      if (!cwd) throw new Error("Git diff is unavailable.");
+      return api.git.diff({ cwd });
     },
     enabled: cwd !== null,
     staleTime: GIT_STATUS_STALE_TIME_MS,

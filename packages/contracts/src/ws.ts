@@ -15,6 +15,7 @@ import {
   GitActionProgressEvent,
   GitCheckoutInput,
   GitCreateBranchInput,
+  GitDiffInput,
   GitPreparePullRequestThreadInput,
   GitCreateWorktreeInput,
   GitInitInput,
@@ -55,6 +56,7 @@ export const WS_METHODS = {
 
   // Git methods
   gitPull: "git.pull",
+  gitDiff: "git.diff",
   gitStatus: "git.status",
   gitRunStackedAction: "git.runStackedAction",
   gitListBranches: "git.listBranches",
@@ -124,6 +126,7 @@ const WebSocketRequestBody = Schema.Union([
 
   // Git methods
   tagRequestBody(WS_METHODS.gitPull, GitPullInput),
+  tagRequestBody(WS_METHODS.gitDiff, GitDiffInput),
   tagRequestBody(WS_METHODS.gitStatus, GitStatusInput),
   tagRequestBody(WS_METHODS.gitRunStackedAction, GitRunStackedActionInput),
   tagRequestBody(WS_METHODS.gitListBranches, GitListBranchesInput),

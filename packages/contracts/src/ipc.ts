@@ -2,6 +2,8 @@ import type {
   GitCheckoutInput,
   GitActionProgressEvent,
   GitCreateBranchInput,
+  GitDiffInput,
+  GitDiffResult,
   GitPreparePullRequestThreadInput,
   GitPreparePullRequestThreadResult,
   GitPullRequestRefInput,
@@ -153,6 +155,7 @@ export interface NativeApi {
     ) => Promise<GitPreparePullRequestThreadResult>;
     // Stacked action API
     pull: (input: GitPullInput) => Promise<GitPullResult>;
+    diff: (input: GitDiffInput) => Promise<GitDiffResult>;
     status: (input: GitStatusInput) => Promise<GitStatusResult>;
     runStackedAction: (input: GitRunStackedActionInput) => Promise<GitRunStackedActionResult>;
     onActionProgress: (callback: (event: GitActionProgressEvent) => void) => () => void;
