@@ -27,6 +27,7 @@ import { autoUpdater } from "electron-updater";
 import type { ContextMenuItem } from "@t3tools/contracts";
 import { NetService } from "@t3tools/shared/Net";
 import { RotatingFileSink } from "@t3tools/shared/logging";
+import { requireDesktopBackendPort } from "./backendPort";
 import { showDesktopConfirmDialog } from "./confirmDialog";
 import { syncShellEnvironment } from "./syncShellEnvironment";
 import { getAutoUpdateDisabledReason, shouldBroadcastDownloadProgress } from "./updateState";
@@ -1338,12 +1339,11 @@ configureAppIdentity();
 
 async function bootstrap(): Promise<void> {
   writeDesktopLogHeader("bootstrap start");
-  backendPort = await Effect.service(NetService).pipe(
-    Effect.flatMap((net) => net.reserveLoopbackPort()),
+  backendPort = await requireDesktopBackendPort(process.env).pipe(
     Effect.provide(NetService.layer),
     Effect.runPromise,
   );
-  writeDesktopLogHeader(`reserved backend port via NetService port=${backendPort}`);
+  writeDesktopLogHeader(`bootstrap using required backend port=${backendPort}`);
   backendAuthToken = Crypto.randomBytes(24).toString("hex");
   const baseUrl = `ws://127.0.0.1:${backendPort}`;
   backendWsUrl = `${baseUrl}/?token=${encodeURIComponent(backendAuthToken)}`;

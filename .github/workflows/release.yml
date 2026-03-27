@@ -18,6 +18,7 @@ permissions:
 jobs:
   preflight:
     name: Preflight
+    if: github.repository_owner == 'pingdotgg'
     runs-on: ubuntu-24.04
     outputs:
       version: ${{ steps.release_meta.outputs.version }}
@@ -79,6 +80,7 @@ jobs:
 
   build:
     name: Build ${{ matrix.label }}
+    if: github.repository_owner == 'pingdotgg'
     needs: preflight
     runs-on: ${{ matrix.runner }}
     strategy:
@@ -225,6 +227,7 @@ jobs:
 
   publish_cli:
     name: Publish CLI to npm
+    if: github.repository_owner == 'pingdotgg'
     needs: [preflight, build]
     runs-on: ubuntu-24.04
     steps:
@@ -258,6 +261,7 @@ jobs:
 
   release:
     name: Publish GitHub Release
+    if: github.repository_owner == 'pingdotgg'
     needs: [preflight, build, publish_cli]
     runs-on: ubuntu-24.04
     steps:
@@ -305,6 +309,7 @@ jobs:
 
   finalize:
     name: Finalize release
+    if: github.repository_owner == 'pingdotgg'
     needs: [preflight, release]
     runs-on: ubuntu-24.04
     steps:

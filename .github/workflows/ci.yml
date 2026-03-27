@@ -9,6 +9,7 @@ on:
 jobs:
   quality:
     name: Format, Lint, Typecheck, Test, Browser Test, Build
+    if: github.repository_owner == 'pingdotgg'
     runs-on: blacksmith-4vcpu-ubuntu-2404
     steps:
       - name: Checkout
@@ -75,6 +76,7 @@ jobs:
 
   release_smoke:
     name: Release Smoke
+    if: github.repository_owner == 'pingdotgg'
     runs-on: ubuntu-24.04
     steps:
       - name: Checkout
