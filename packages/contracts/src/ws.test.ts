@@ -73,6 +73,19 @@ it.effect("accepts git.preparePullRequestThread requests", () =>
   }),
 );
 
+it.effect("accepts git.diff requests", () =>
+  Effect.gen(function* () {
+    const parsed = yield* decodeWebSocketRequest({
+      id: "req-git-diff-1",
+      body: {
+        _tag: WS_METHODS.gitDiff,
+        cwd: "/repo",
+      },
+    });
+    assert.strictEqual(parsed.body._tag, WS_METHODS.gitDiff);
+  }),
+);
+
 it.effect("accepts typed websocket push envelopes with sequence", () =>
   Effect.gen(function* () {
     const parsed = yield* decodeWsResponse({

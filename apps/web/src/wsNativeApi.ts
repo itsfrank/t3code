@@ -178,6 +178,7 @@ export function createWsNativeApi(): NativeApi {
     },
     git: {
       pull: (input) => transport.request(WS_METHODS.gitPull, input),
+      diff: (input) => transport.request(WS_METHODS.gitDiff, input),
       status: (input) => transport.request(WS_METHODS.gitStatus, input),
       runStackedAction: (input) =>
         transport.request(WS_METHODS.gitRunStackedAction, input, { timeoutMs: null }),

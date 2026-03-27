@@ -70,6 +70,11 @@ export const GitPullInput = Schema.Struct({
 });
 export type GitPullInput = typeof GitPullInput.Type;
 
+export const GitDiffInput = Schema.Struct({
+  cwd: TrimmedNonEmptyStringSchema,
+});
+export type GitDiffInput = typeof GitDiffInput.Type;
+
 export const GitRunStackedActionInput = Schema.Struct({
   actionId: TrimmedNonEmptyStringSchema,
   cwd: TrimmedNonEmptyStringSchema,
@@ -222,6 +227,11 @@ export const GitPullResult = Schema.Struct({
   upstreamBranch: TrimmedNonEmptyStringSchema.pipe(Schema.NullOr),
 });
 export type GitPullResult = typeof GitPullResult.Type;
+
+export const GitDiffResult = Schema.Struct({
+  diff: Schema.String,
+});
+export type GitDiffResult = typeof GitDiffResult.Type;
 
 const GitActionProgressBase = Schema.Struct({
   actionId: TrimmedNonEmptyStringSchema,

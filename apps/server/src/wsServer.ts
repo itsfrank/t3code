@@ -820,6 +820,11 @@ export const createServer = Effect.fn(function* (): Effect.fn.Return<
         return yield* git.pullCurrentBranch(body.cwd);
       }
 
+      case WS_METHODS.gitDiff: {
+        const body = stripRequestTag(request.body);
+        return yield* git.readWorkingTreeDiff(body.cwd);
+      }
+
       case WS_METHODS.gitRunStackedAction: {
         const body = stripRequestTag(request.body);
         return yield* gitManager.runStackedAction(body, {

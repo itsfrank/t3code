@@ -6,12 +6,14 @@ describe("parseDiffRouteSearch", () => {
   it("parses valid diff search values", () => {
     const parsed = parseDiffRouteSearch({
       diff: "1",
+      diffScope: "git",
       diffTurnId: "turn-1",
       diffFilePath: "src/app.ts",
     });
 
     expect(parsed).toEqual({
       diff: "1",
+      diffScope: "git",
       diffTurnId: "turn-1",
       diffFilePath: "src/app.ts",
     });
@@ -25,6 +27,7 @@ describe("parseDiffRouteSearch", () => {
       }),
     ).toEqual({
       diff: "1",
+      diffScope: "session",
       diffTurnId: "turn-1",
     });
 
@@ -35,6 +38,7 @@ describe("parseDiffRouteSearch", () => {
       }),
     ).toEqual({
       diff: "1",
+      diffScope: "session",
       diffTurnId: "turn-1",
     });
   });
@@ -57,6 +61,7 @@ describe("parseDiffRouteSearch", () => {
 
     expect(parsed).toEqual({
       diff: "1",
+      diffScope: "session",
     });
   });
 
@@ -69,6 +74,46 @@ describe("parseDiffRouteSearch", () => {
 
     expect(parsed).toEqual({
       diff: "1",
+      diffScope: "session",
+    });
+  });
+
+  it("defaults diff scope to session when absent", () => {
+    expect(
+      parseDiffRouteSearch({
+        diff: "1",
+      }),
+    ).toEqual({
+      diff: "1",
+      diffScope: "session",
+    });
+  });
+
+  it("drops invalid diff scope values back to session", () => {
+    expect(
+      parseDiffRouteSearch({
+        diff: "1",
+        diffScope: "workspace",
+      }),
+    ).toEqual({
+      diff: "1",
+      diffScope: "session",
+    });
+  });
+
+  it("preserves turn and file state in git diff scope", () => {
+    expect(
+      parseDiffRouteSearch({
+        diff: "1",
+        diffScope: "git",
+        diffTurnId: "turn-1",
+        diffFilePath: "src/app.ts",
+      }),
+    ).toEqual({
+      diff: "1",
+      diffScope: "git",
+      diffTurnId: "turn-1",
+      diffFilePath: "src/app.ts",
     });
   });
 });
