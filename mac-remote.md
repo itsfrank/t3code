@@ -4,31 +4,11 @@ This guide assumes:
 
 - your local machine is a Mac with internet access
 - the remote machine is a Mac without internet access
-- you want to run T3 Code on the remote machine
-- you want to forward its port back to your local Mac over SSH
+- you want to run T3 Code on the remote machine and open it in your local browser over SSH
 
-## 0. Build the mac release artifact on your local Mac
+## Preferred path: server bundle
 
-From the repo root on your local Mac:
-
-```bash
-bun run dist:desktop:dmg
-```
-
-That produces release artifacts in `release/`, including:
-
-- `release/T3-Code-0.0.14-arm64.dmg`
-- `release/T3-Code-0.0.14-arm64.zip`
-
-For remote copy/setup, the `.zip` is usually easier than the `.dmg`.
-
-If you need an Intel build instead, run:
-
-```bash
-node scripts/build-desktop-artifact.ts --platform mac --target dmg --arch x64
-```
-
-Then use the matching `release/T3-Code-*-x64.zip` artifact below.
+The packaged desktop `.app` can fail when started from a non-GUI SSH session on macOS. For remote use over SSH, the better path is a self-contained server bundle.
 
 ## 1. Check the remote Mac architecture
 
@@ -38,47 +18,78 @@ Run this on the remote Mac:
 uname -m
 ```
 
-Use the matching artifact:
+Results:
 
-- `arm64` -> `release/T3-Code-0.0.14-arm64.zip`
-- `x86_64` -> build and use the x64 artifact instead
+- `arm64` -> Apple Silicon
+- `x86_64` -> Intel
 
-## 2. Copy the app to the remote Mac
+Important: build the bundle on a Mac with the same architecture as the remote Mac. The bundle includes native Node modules.
+
+## 2. Build the server bundle on your local Mac
+
+From the repo root on your local Mac:
+
+```bash
+bun run dist:server:mac
+```
+
+That builds web + server assets, downloads an official Node runtime for your current Mac architecture, installs production dependencies into a staging directory, and writes a tarball to `release/`.
+
+Example output:
+
+```text
+release/t3-server-mac-arm64-v0.0.14.tar.gz
+```
+
+If you need to force the architecture explicitly:
+
+```bash
+node scripts/build-mac-server-bundle.ts --arch arm64
+```
+
+or:
+
+```bash
+node scripts/build-mac-server-bundle.ts --arch x64
+```
+
+## 3. Copy the bundle to the remote Mac
 
 From your local Mac:
 
 ```bash
-scp release/T3-Code-0.0.14-arm64.zip user@remote-mac:~/
+scp release/t3-server-mac-arm64-v0.0.14.tar.gz user@remote-mac:~/
 ```
 
-Replace `user@remote-mac` with your actual SSH target.
+Replace `user@remote-mac` with your actual SSH target, and replace `arm64` with `x64` if needed.
 
-## 3. Unpack the app on the remote Mac
+## 4. Unpack the bundle on the remote Mac
 
 On the remote Mac:
 
 ```bash
 cd ~
-unzip -o T3-Code-0.0.14-arm64.zip
+tar -xzf t3-server-mac-arm64-v0.0.14.tar.gz
+cd t3-server-mac-arm64-v0.0.14
 ```
 
-This should give you `T3 Code.app`.
-
-## 4. Launch T3 Code on a fixed port
+## 5. Start T3 Code on a fixed port
 
 On the remote Mac:
 
 ```bash
-T3CODE_DESKTOP_BACKEND_PORT=3773 "$HOME/T3 Code.app/Contents/MacOS/T3 Code"
+T3CODE_PORT=3773 ./run-t3-server.sh
 ```
 
-Notes:
+This launcher starts the bundled Node runtime and runs T3 Code with:
 
-- this app build now requires `T3CODE_DESKTOP_BACKEND_PORT`
-- it exits if the port is missing, invalid, or already in use
-- the remote Mac does not need Node.js installed for this packaged app to run
+- `--no-browser`
+- `--host 127.0.0.1`
+- `--port "$T3CODE_PORT"`
 
-## 5. Forward the port back to your local Mac
+If you do not set `T3CODE_PORT`, it defaults to `3773`.
+
+## 6. Forward the port back to your local Mac
 
 From your local Mac:
 
@@ -88,7 +99,7 @@ ssh -L 3773:127.0.0.1:3773 user@remote-mac
 
 Keep that SSH session open.
 
-## 6. Open T3 Code in your local browser
+## 7. Open T3 Code locally
 
 On your local Mac, open:
 
@@ -101,7 +112,7 @@ http://localhost:3773
 On the remote Mac:
 
 ```bash
-nohup env T3CODE_DESKTOP_BACKEND_PORT=3773 "$HOME/T3 Code.app/Contents/MacOS/T3 Code" >/tmp/t3code.log 2>&1 &
+nohup env T3CODE_PORT=3773 ./run-t3-server.sh >/tmp/t3code.log 2>&1 &
 ```
 
 Then inspect logs with:
@@ -112,11 +123,6 @@ tail -f /tmp/t3code.log
 
 ## Troubleshooting
 
-- `address already in use` -> choose another port and use the same port in both the app launch command and SSH tunnel
-- app does not open because of Gatekeeper -> right-click the app in Finder and choose Open, or remove quarantine with:
-
-```bash
-xattr -dr com.apple.quarantine "$HOME/T3 Code.app"
-```
-
-- remote Mac is Intel -> do not use the arm64 zip; build/copy the x64 artifact instead
+- `address already in use` -> choose another port and use the same port in both `T3CODE_PORT` and the SSH tunnel
+- `bad CPU type in executable` -> rebuild the bundle for the remote Mac's architecture
+- `codex` not found -> the T3 Code UI can still start, but Codex-backed sessions need the Codex CLI available on the remote machine
