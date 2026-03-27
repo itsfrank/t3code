@@ -11,7 +11,7 @@
  */
 import { randomUUID } from "node:crypto";
 
-import { Effect, Layer, FileSystem, Path } from "effect";
+import { Duration, Effect, Layer, FileSystem, Path } from "effect";
 
 import { CheckpointInvariantError } from "../Errors.ts";
 import { GitCommandError } from "../../git/Errors.ts";
@@ -23,6 +23,7 @@ const makeCheckpointStore = Effect.gen(function* () {
   const fs = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
   const git = yield* GitCore;
+  const CHECKPOINT_CAPTURE_TIMEOUT_MS = Duration.toMillis(Duration.minutes(5));
 
   const resolveHeadCommit = (cwd: string): Effect.Effect<string | null, GitCommandError> =>
     git
@@ -111,6 +112,7 @@ const makeCheckpointStore = Effect.gen(function* () {
                 cwd: input.cwd,
                 args: ["read-tree", "HEAD"],
                 env: commitEnv,
+                timeoutMs: CHECKPOINT_CAPTURE_TIMEOUT_MS,
               });
             }
 
@@ -119,6 +121,7 @@ const makeCheckpointStore = Effect.gen(function* () {
               cwd: input.cwd,
               args: ["add", "-A", "--", "."],
               env: commitEnv,
+              timeoutMs: CHECKPOINT_CAPTURE_TIMEOUT_MS,
             });
 
             const writeTreeResult = yield* git.execute({
@@ -126,6 +129,7 @@ const makeCheckpointStore = Effect.gen(function* () {
               cwd: input.cwd,
               args: ["write-tree"],
               env: commitEnv,
+              timeoutMs: CHECKPOINT_CAPTURE_TIMEOUT_MS,
             });
             const treeOid = writeTreeResult.stdout.trim();
             if (treeOid.length === 0) {
@@ -143,6 +147,7 @@ const makeCheckpointStore = Effect.gen(function* () {
               cwd: input.cwd,
               args: ["commit-tree", treeOid, "-m", message],
               env: commitEnv,
+              timeoutMs: CHECKPOINT_CAPTURE_TIMEOUT_MS,
             });
             const commitOid = commitTreeResult.stdout.trim();
             if (commitOid.length === 0) {
@@ -158,6 +163,7 @@ const makeCheckpointStore = Effect.gen(function* () {
               operation,
               cwd: input.cwd,
               args: ["update-ref", input.checkpointRef, commitOid],
+              timeoutMs: CHECKPOINT_CAPTURE_TIMEOUT_MS,
             });
           }),
         (tempDir) => fs.remove(tempDir, { recursive: true }),
