@@ -27,7 +27,6 @@ describe("parseDiffRouteSearch", () => {
       }),
     ).toEqual({
       diff: "1",
-      diffScope: "session",
       diffTurnId: "turn-1",
     });
 
@@ -38,7 +37,6 @@ describe("parseDiffRouteSearch", () => {
       }),
     ).toEqual({
       diff: "1",
-      diffScope: "session",
       diffTurnId: "turn-1",
     });
   });
@@ -61,7 +59,6 @@ describe("parseDiffRouteSearch", () => {
 
     expect(parsed).toEqual({
       diff: "1",
-      diffScope: "session",
     });
   });
 
@@ -74,22 +71,20 @@ describe("parseDiffRouteSearch", () => {
 
     expect(parsed).toEqual({
       diff: "1",
-      diffScope: "session",
     });
   });
 
-  it("defaults diff scope to session when absent", () => {
+  it("leaves diff scope unset when absent", () => {
     expect(
       parseDiffRouteSearch({
         diff: "1",
       }),
     ).toEqual({
       diff: "1",
-      diffScope: "session",
     });
   });
 
-  it("drops invalid diff scope values back to session", () => {
+  it("drops invalid diff scope values", () => {
     expect(
       parseDiffRouteSearch({
         diff: "1",
@@ -97,7 +92,6 @@ describe("parseDiffRouteSearch", () => {
       }),
     ).toEqual({
       diff: "1",
-      diffScope: "session",
     });
   });
 

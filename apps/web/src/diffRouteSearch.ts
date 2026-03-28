@@ -38,7 +38,7 @@ export function parseDiffRouteSearch(search: Record<string, unknown>): DiffRoute
   const diff = isDiffOpenValue(search.diff) ? "1" : undefined;
   const diffScopeRaw = diff ? normalizeSearchString(search.diffScope) : undefined;
   const diffScope: DiffScope | undefined =
-    diffScopeRaw === "git" ? "git" : diff ? "session" : undefined;
+    diffScopeRaw === "git" || diffScopeRaw === "session" ? diffScopeRaw : undefined;
   const diffTurnIdRaw = diff ? normalizeSearchString(search.diffTurnId) : undefined;
   const diffTurnId = diffTurnIdRaw ? TurnId.makeUnsafe(diffTurnIdRaw) : undefined;
   const diffFilePath = diff && diffTurnId ? normalizeSearchString(search.diffFilePath) : undefined;

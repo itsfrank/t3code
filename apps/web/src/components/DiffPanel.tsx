@@ -4,6 +4,7 @@ import { useQuery } from "@tanstack/react-query";
 import { useNavigate, useParams, useSearch } from "@tanstack/react-router";
 import { ThreadId, type TurnId } from "@t3tools/contracts";
 import {
+  ChevronDownIcon,
   ChevronLeftIcon,
   ChevronRightIcon,
   Columns2Icon,
@@ -20,12 +21,9 @@ import {
   useRef,
   useState,
 } from "react";
-import { openInPreferredEditor } from "../editorPreferences";
 import { gitBranchesQueryOptions, gitDiffQueryOptions } from "~/lib/gitReactQuery";
 import { checkpointDiffQueryOptions } from "~/lib/providerReactQuery";
 import { cn } from "~/lib/utils";
-import { readNativeApi } from "../nativeApi";
-import { resolvePathLinkTarget } from "../terminal-links";
 import { parseDiffRouteSearch, stripDiffSearchParams, type DiffScope } from "../diffRouteSearch";
 import { useTheme } from "../hooks/useTheme";
 import { buildPatchCacheKey } from "../lib/diffRendering";
@@ -35,10 +33,18 @@ import { useStore } from "../store";
 import { useSettings } from "../hooks/useSettings";
 import { formatShortTimestamp } from "../timestampFormat";
 import { DiffPanelLoadingState, DiffPanelShell, type DiffPanelMode } from "./DiffPanelShell";
+import { VscodeEntryIcon } from "./chat/VscodeEntryIcon";
 import { ToggleGroup, Toggle } from "./ui/toggle-group";
 
 type DiffRenderMode = "stacked" | "split";
 type DiffThemeType = "light" | "dark";
+
+const DIFF_SCOPE_STORAGE_KEY = "t3code:diff-panel-scope";
+const DEFAULT_DIFF_SCOPE: DiffScope = "git";
+
+function getWorkingTreeCollapsedStorageKey(cwd: string): string {
+  return `t3code:diff-panel:git-collapsed:${cwd}`;
+}
 
 const DIFF_PANEL_UNSAFE_CSS = `
 [data-diffs-header],
@@ -155,8 +161,56 @@ function resolveFileDiffPath(fileDiff: FileDiffMetadata): string {
   return raw;
 }
 
+function splitFileDiffPath(filePath: string): { directory: string | null; fileName: string } {
+  const normalizedPath = filePath.replace(/\/+$/, "");
+  const lastSlashIndex = normalizedPath.lastIndexOf("/");
+  if (lastSlashIndex === -1) {
+    return { directory: null, fileName: normalizedPath };
+  }
+  return {
+    directory: normalizedPath.slice(0, lastSlashIndex + 1),
+    fileName: normalizedPath.slice(lastSlashIndex + 1),
+  };
+}
+
 function buildFileDiffRenderKey(fileDiff: FileDiffMetadata): string {
   return fileDiff.cacheKey ?? `${fileDiff.prevName ?? "none"}:${fileDiff.name}`;
+}
+
+function getFileDiffLineStats(fileDiff: FileDiffMetadata) {
+  return fileDiff.hunks.reduce(
+    (totals, hunk) => ({
+      additions: totals.additions + hunk.additionLines,
+      deletions: totals.deletions + hunk.deletionLines,
+    }),
+    { additions: 0, deletions: 0 },
+  );
+}
+
+function getFileDiffChangeLabel(fileDiff: FileDiffMetadata): string {
+  switch (fileDiff.type) {
+    case "new":
+      return "Added";
+    case "deleted":
+      return "Removed";
+    case "rename-pure":
+      return "Renamed";
+    case "rename-changed":
+      return "Renamed and modified";
+    default:
+      return "Modified";
+  }
+}
+
+function getFileDiffNameClasses(fileDiff: FileDiffMetadata): string {
+  switch (fileDiff.type) {
+    case "new":
+      return "text-emerald-600 dark:text-emerald-400";
+    case "deleted":
+      return "text-rose-600 dark:text-rose-400";
+    default:
+      return "text-foreground";
+  }
 }
 
 interface DiffPanelProps {
@@ -169,6 +223,13 @@ export default function DiffPanel({ mode = "inline" }: DiffPanelProps) {
   const navigate = useNavigate();
   const { resolvedTheme } = useTheme();
   const settings = useSettings();
+  const [rememberedDiffScope, setRememberedDiffScope] = useState<DiffScope>(() => {
+    if (typeof window === "undefined") {
+      return DEFAULT_DIFF_SCOPE;
+    }
+    const storedValue = window.localStorage.getItem(DIFF_SCOPE_STORAGE_KEY);
+    return storedValue === "session" || storedValue === "git" ? storedValue : DEFAULT_DIFF_SCOPE;
+  });
   const [diffRenderMode, setDiffRenderMode] = useState<DiffRenderMode>("stacked");
   const [diffWordWrap, setDiffWordWrap] = useState(settings.diffWordWrap);
   const patchViewportRef = useRef<HTMLDivElement>(null);
@@ -176,13 +237,14 @@ export default function DiffPanel({ mode = "inline" }: DiffPanelProps) {
   const previousDiffOpenRef = useRef(false);
   const [canScrollTurnStripLeft, setCanScrollTurnStripLeft] = useState(false);
   const [canScrollTurnStripRight, setCanScrollTurnStripRight] = useState(false);
+  const [collapsedFileKeys, setCollapsedFileKeys] = useState<Set<string>>(() => new Set());
   const routeThreadId = useParams({
     strict: false,
     select: (params) => (params.threadId ? ThreadId.makeUnsafe(params.threadId) : null),
   });
   const diffSearch = useSearch({ strict: false, select: (search) => parseDiffRouteSearch(search) });
   const diffOpen = diffSearch.diff === "1";
-  const diffScope = diffSearch.diffScope ?? "session";
+  const diffScope = diffSearch.diffScope ?? rememberedDiffScope;
   const isSessionDiffScope = diffScope === "session";
   const activeThreadId = routeThreadId;
   const activeThread = useStore((store) =>
@@ -322,6 +384,24 @@ export default function DiffPanel({ mode = "inline" }: DiffPanelProps) {
       }),
     );
   }, [renderablePatch]);
+  const totalDiffLineStats = useMemo(
+    () =>
+      renderableFiles.reduce(
+        (totals, fileDiff) => {
+          const lineStats = getFileDiffLineStats(fileDiff);
+          return {
+            additions: totals.additions + lineStats.additions,
+            deletions: totals.deletions + lineStats.deletions,
+          };
+        },
+        { additions: 0, deletions: 0 },
+      ),
+    [renderableFiles],
+  );
+
+  const allDiffCardsCollapsed =
+    renderableFiles.length > 0 &&
+    renderableFiles.every((fileDiff) => collapsedFileKeys.has(buildFileDiffRenderKey(fileDiff)));
 
   useEffect(() => {
     if (diffOpen && !previousDiffOpenRef.current) {
@@ -329,6 +409,59 @@ export default function DiffPanel({ mode = "inline" }: DiffPanelProps) {
     }
     previousDiffOpenRef.current = diffOpen;
   }, [diffOpen, settings.diffWordWrap]);
+
+  useEffect(() => {
+    if (!isSessionDiffScope) {
+      return;
+    }
+    setCollapsedFileKeys(new Set());
+  }, [isSessionDiffScope, selectedPatch]);
+
+  useEffect(() => {
+    if (isSessionDiffScope || typeof window === "undefined") {
+      return;
+    }
+    if (!activeCwd) {
+      setCollapsedFileKeys(new Set());
+      return;
+    }
+
+    const rawValue = window.localStorage.getItem(getWorkingTreeCollapsedStorageKey(activeCwd));
+    if (!rawValue) {
+      setCollapsedFileKeys(new Set());
+      return;
+    }
+
+    try {
+      const parsed = JSON.parse(rawValue);
+      if (!Array.isArray(parsed)) {
+        setCollapsedFileKeys(new Set());
+        return;
+      }
+      setCollapsedFileKeys(
+        new Set(parsed.filter((value): value is string => typeof value === "string")),
+      );
+    } catch {
+      setCollapsedFileKeys(new Set());
+    }
+  }, [activeCwd, isSessionDiffScope]);
+
+  useEffect(() => {
+    setRememberedDiffScope(diffScope);
+    if (typeof window !== "undefined") {
+      window.localStorage.setItem(DIFF_SCOPE_STORAGE_KEY, diffScope);
+    }
+  }, [diffScope]);
+
+  useEffect(() => {
+    if (isSessionDiffScope || typeof window === "undefined" || !activeCwd) {
+      return;
+    }
+    window.localStorage.setItem(
+      getWorkingTreeCollapsedStorageKey(activeCwd),
+      JSON.stringify([...collapsedFileKeys]),
+    );
+  }, [activeCwd, collapsedFileKeys, isSessionDiffScope]);
 
   useEffect(() => {
     if (!isSessionDiffScope || !selectedFilePath || !patchViewportRef.current) {
@@ -339,18 +472,6 @@ export default function DiffPanel({ mode = "inline" }: DiffPanelProps) {
     ).find((element) => element.dataset.diffFilePath === selectedFilePath);
     target?.scrollIntoView({ block: "nearest" });
   }, [isSessionDiffScope, selectedFilePath, renderableFiles]);
-
-  const openDiffFileInEditor = useCallback(
-    (filePath: string) => {
-      const api = readNativeApi();
-      if (!api) return;
-      const targetPath = activeCwd ? resolvePathLinkTarget(filePath, activeCwd) : filePath;
-      void openInPreferredEditor(api, targetPath).catch((error) => {
-        console.warn("Failed to open diff file in editor.", error);
-      });
-    },
-    [activeCwd],
-  );
 
   const selectDiffScope = useCallback(
     (nextScope: DiffScope) => {
@@ -412,6 +533,30 @@ export default function DiffPanel({ mode = "inline" }: DiffPanelProps) {
     event.preventDefault();
     element.scrollBy({ left: event.deltaY, behavior: "auto" });
   }, []);
+
+  const toggleFileCollapsed = useCallback((fileKey: string) => {
+    setCollapsedFileKeys((previous) => {
+      const next = new Set(previous);
+      if (next.has(fileKey)) {
+        next.delete(fileKey);
+      } else {
+        next.add(fileKey);
+      }
+      return next;
+    });
+  }, []);
+
+  const toggleAllDiffCards = useCallback(() => {
+    setCollapsedFileKeys((previous) => {
+      const shouldExpandAll = renderableFiles.every((fileDiff) =>
+        previous.has(buildFileDiffRenderKey(fileDiff)),
+      );
+      if (shouldExpandAll) {
+        return new Set();
+      }
+      return new Set(renderableFiles.map((fileDiff) => buildFileDiffRenderKey(fileDiff)));
+    });
+  }, [renderableFiles]);
 
   useEffect(() => {
     const element = turnStripRef.current;
@@ -540,10 +685,16 @@ export default function DiffPanel({ mode = "inline" }: DiffPanelProps) {
     </div>
   ) : (
     <div className="min-w-0 flex-1 px-1 [-webkit-app-region:no-drag]">
-      <div className="rounded-md border border-border/70 bg-background/70 px-3 py-2">
-        <div className="text-[10px] leading-tight font-medium text-foreground">Working tree</div>
-        <div className="text-[10px] leading-tight text-muted-foreground/80">
-          Staged, unstaged, and untracked changes
+      <div className="flex items-center gap-2 overflow-x-auto py-0.5">
+        <div className="shrink-0 rounded-md border border-border bg-accent px-2 py-1 text-left text-[10px] leading-tight font-medium text-accent-foreground">
+          Working Tree
+        </div>
+        <div className="shrink-0 px-0.5 text-[11px] font-medium">
+          <span className="text-emerald-600 dark:text-emerald-400">
+            +{totalDiffLineStats.additions}
+          </span>
+          <span className="px-1" aria-hidden="true" />
+          <span className="text-rose-600 dark:text-rose-400">-{totalDiffLineStats.deletions}</span>
         </div>
       </div>
     </div>
@@ -591,6 +742,23 @@ export default function DiffPanel({ mode = "inline" }: DiffPanelProps) {
             <Columns2Icon className="size-3" />
           </Toggle>
         </ToggleGroup>
+        <Toggle
+          aria-label={allDiffCardsCollapsed ? "Expand all diff cards" : "Collapse all diff cards"}
+          title={allDiffCardsCollapsed ? "Expand all" : "Collapse all"}
+          variant="outline"
+          size="xs"
+          disabled={renderableFiles.length === 0}
+          pressed={allDiffCardsCollapsed}
+          onPressedChange={() => {
+            toggleAllDiffCards();
+          }}
+        >
+          {allDiffCardsCollapsed ? (
+            <ChevronRightIcon className="size-3" />
+          ) : (
+            <ChevronDownIcon className="size-3" />
+          )}
+        </Toggle>
         <Toggle
           aria-label={diffWordWrap ? "Disable diff line wrapping" : "Enable diff line wrapping"}
           title={diffWordWrap ? "Disable line wrapping" : "Enable line wrapping"}
@@ -660,36 +828,87 @@ export default function DiffPanel({ mode = "inline" }: DiffPanelProps) {
               >
                 {renderableFiles.map((fileDiff) => {
                   const filePath = resolveFileDiffPath(fileDiff);
+                  const { directory, fileName } = splitFileDiffPath(filePath);
                   const fileKey = buildFileDiffRenderKey(fileDiff);
                   const themedFileKey = `${fileKey}:${resolvedTheme}`;
+                  const diffBodyId = `diff-card-${themedFileKey.replace(/[^a-zA-Z0-9_-]/g, "-")}`;
+                  const isCollapsed = collapsedFileKeys.has(fileKey);
+                  const lineStats = getFileDiffLineStats(fileDiff);
+                  const changeLabel = getFileDiffChangeLabel(fileDiff);
                   return (
-                    <div
+                    <section
                       key={themedFileKey}
                       data-diff-file-path={filePath}
-                      className="diff-render-file mb-2 rounded-md first:mt-2 last:mb-0"
-                      onClickCapture={(event) => {
-                        const nativeEvent = event.nativeEvent as MouseEvent;
-                        const composedPath = nativeEvent.composedPath?.() ?? [];
-                        const clickedHeader = composedPath.some((node) => {
-                          if (!(node instanceof Element)) return false;
-                          return node.hasAttribute("data-title");
-                        });
-                        if (!clickedHeader) return;
-                        openDiffFileInEditor(filePath);
-                      }}
+                      className="diff-render-file mb-1.5 overflow-hidden rounded-md border border-border/70 bg-card/70 shadow-xs first:mt-2 last:mb-0"
                     >
-                      <FileDiff
-                        fileDiff={fileDiff}
-                        options={{
-                          diffStyle: diffRenderMode === "split" ? "split" : "unified",
-                          lineDiffType: "none",
-                          overflow: diffWordWrap ? "wrap" : "scroll",
-                          theme: resolveDiffThemeName(resolvedTheme),
-                          themeType: resolvedTheme as DiffThemeType,
-                          unsafeCSS: DIFF_PANEL_UNSAFE_CSS,
-                        }}
-                      />
-                    </div>
+                      <div className="flex min-h-8 items-center gap-2 px-2.5 py-0.75">
+                        <button
+                          type="button"
+                          className="flex min-w-0 flex-1 items-center gap-2 text-left"
+                          onClick={() => toggleFileCollapsed(fileKey)}
+                          aria-expanded={!isCollapsed}
+                          aria-controls={diffBodyId}
+                        >
+                          {isCollapsed ? (
+                            <ChevronRightIcon className="size-3.5 shrink-0 text-muted-foreground/75" />
+                          ) : (
+                            <ChevronDownIcon className="size-3.5 shrink-0 text-muted-foreground/75" />
+                          )}
+                          <VscodeEntryIcon
+                            pathValue={filePath}
+                            kind="file"
+                            theme={resolvedTheme}
+                            className="size-3.5"
+                          />
+                          <span className="min-w-0 truncate text-[13px] leading-none">
+                            {directory ? (
+                              <>
+                                <span className="text-muted-foreground/80">{directory}</span>
+                                <span
+                                  className={cn("font-medium", getFileDiffNameClasses(fileDiff))}
+                                >
+                                  {fileName}
+                                </span>
+                              </>
+                            ) : (
+                              <span className={cn("font-medium", getFileDiffNameClasses(fileDiff))}>
+                                {fileName}
+                              </span>
+                            )}
+                          </span>
+                        </button>
+                        <div className="flex shrink-0 items-center gap-1.5">
+                          <div
+                            className="flex items-center gap-1.5 px-0.5 text-[11px] font-medium"
+                            title={changeLabel}
+                            aria-label={changeLabel}
+                          >
+                            <span className="text-emerald-600 dark:text-emerald-400">
+                              +{lineStats.additions}
+                            </span>
+                            <span className="text-rose-600 dark:text-rose-400">
+                              -{lineStats.deletions}
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+                      {!isCollapsed && (
+                        <div id={diffBodyId} className="border-t border-border/60 bg-background/20">
+                          <FileDiff
+                            fileDiff={fileDiff}
+                            options={{
+                              diffStyle: diffRenderMode === "split" ? "split" : "unified",
+                              disableFileHeader: true,
+                              lineDiffType: "none",
+                              overflow: diffWordWrap ? "wrap" : "scroll",
+                              theme: resolveDiffThemeName(resolvedTheme),
+                              themeType: resolvedTheme as DiffThemeType,
+                              unsafeCSS: DIFF_PANEL_UNSAFE_CSS,
+                            }}
+                          />
+                        </div>
+                      )}
+                    </section>
                   );
                 })}
               </Virtualizer>
