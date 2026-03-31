@@ -44,13 +44,13 @@ release/t3-server-mac-arm64-v0.0.14.tar.gz
 If you need to force the architecture explicitly:
 
 ```bash
-node scripts/build-mac-server-bundle.ts --arch arm64
+node scripts/build-server-bundle.ts --platform mac --arch arm64
 ```
 
 or:
 
 ```bash
-node scripts/build-mac-server-bundle.ts --arch x64
+node scripts/build-server-bundle.ts --platform mac --arch x64
 ```
 
 ## 3. Copy the bundle to the remote Mac
