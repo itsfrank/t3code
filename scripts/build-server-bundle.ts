@@ -96,10 +96,17 @@ function parseNodeVersion(engineRange: string): string {
   return match[1]!;
 }
 
-function run(command: string, args: string[], cwd: string, env?: NodeJS.ProcessEnv) {
+function run(
+  command: string,
+  args: string[],
+  cwd: string,
+  env?: NodeJS.ProcessEnv,
+  options?: { readonly shell?: boolean },
+) {
   execFileSync(command, args, {
     cwd,
     stdio: "inherit",
+    shell: options?.shell ?? false,
     env: {
       ...process.env,
       ...env,
@@ -345,7 +352,13 @@ const packageJson = {
 writeFileSync(join(appRoot, "package.json"), `${JSON.stringify(packageJson, null, 2)}\n`);
 
 console.log("[server-bundle] Installing production dependencies...");
-run(process.platform === "win32" ? "npm.cmd" : "npm", ["install", "--omit=dev"], appRoot);
+run(
+  "npm",
+  ["install", "--omit=dev"],
+  appRoot,
+  undefined,
+  process.platform === "win32" ? { shell: true } : undefined,
+);
 
 writeLauncher(bundleRoot, platform);
 writeReadme(bundleRoot, platform, `${bundleName}.${archiveExtension}`);
